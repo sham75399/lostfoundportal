@@ -1,0 +1,32 @@
+# Security Headers for all routes
+/*
+  X-Content-Type-Options: nosniff
+  X-XSS-Protection: 1; mode=block
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# Font files
+*.woff
+*.woff2
+*.ttf
+  Cache-Control: public, max-age=31536000, immutable
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+# JavaScript
+*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+# CSS
+*.css
+  Cache-Control: public, max-age=31536000, immutable

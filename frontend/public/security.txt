@@ -1,0 +1,6 @@
+# Security Policy for Lost and Found Portal
+
+Contact: mailto:security@lostfoundportal.com
+Expires: 2025-12-31T23:59:00.000Z
+Preferred-Languages: en
+Canonical: https://lostfoundportal.com/.well-known/security.txt

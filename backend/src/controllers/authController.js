@@ -20,7 +20,12 @@ exports.register = async (req, res) => {
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase();
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail
+    });
+
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -30,7 +35,7 @@ exports.register = async (req, res) => {
 
     const user = await User.create({
       name,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       password,
       phone: phone || ''
     });
@@ -74,7 +79,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({
+      email: { $regex: new RegExp('^' + email + '$', 'i') }
+    }).select('+password');
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -195,19 +203,34 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// @desc    Forgot password
+// @desc    Forgot password - Send reset email
 // @route   POST /api/auth/forgot-password
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
 
-    if (!user) {
-      return res.status(404).json({
+    if (!email) {
+      return res.status(400).json({
         success: false,
-        message: 'User not found'
+        message: 'Please provide an email address'
       });
     }
+
+    console.log('📧 Forgot password request for:', email);
+
+    const user = await User.findOne({
+      email: { $regex: new RegExp('^' + email + '$', 'i') }
+    });
+
+    if (!user) {
+      console.log('❌ User not found for email:', email);
+      return res.status(404).json({
+        success: false,
+        message: 'No user found with this email address'
+      });
+    }
+
+    console.log('✅ User found:', user.email);
 
     const resetToken = jwt.sign(
       { id: user._id },
@@ -215,37 +238,78 @@ exports.forgotPassword = async (req, res) => {
       { expiresIn: '1h' }
     );
 
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Password Reset Request',
+    const mailOptions = {
+      from: `"Lost & Found Portal" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Password Reset Request - Lost & Found Portal',
       html: `
-        <h1>Password Reset Request</h1>
-        <p>Click the link below to reset your password:</p>
-        <a href="${resetUrl}">Reset Password</a>
-        <p>This link will expire in 1 hour.</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #1976d2; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+            .content { padding: 30px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+            .button { display: inline-block; padding: 12px 30px; background-color: #1976d2; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .footer { text-align: center; margin-top: 20px; color: #999; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🔐 Password Reset</h1>
+            </div>
+            <div class="content">
+              <p>Hello <strong>${user.name}</strong>,</p>
+              <p>We received a request to reset your password for your Lost & Found Portal account.</p>
+              <p>Click the button below to reset your password:</p>
+              <div style="text-align: center;">
+                <a href="${resetUrl}" class="button">Reset Password</a>
+              </div>
+              <p>This link will expire in <strong>1 hour</strong>.</p>
+              <p>If you didn't request this, please ignore this email.</p>
+              <hr>
+              <p style="font-size: 14px; color: #666;">
+                If the button doesn't work, copy and paste this URL into your browser:<br>
+                <a href="${resetUrl}" style="color: #1976d2; word-break: break-all;">${resetUrl}</a>
+              </p>
+            </div>
+            <div class="footer">
+              <p>© ${new Date().getFullYear()} Lost & Found Portal. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
       `
-    });
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('✅ Reset email sent to:', user.email);
 
     res.json({
       success: true,
-      message: 'Reset password email sent'
+      message: 'Password reset email sent successfully. Please check your inbox.'
     });
   } catch (error) {
-    console.error('Forgot password error:', error);
+    console.error('❌ Forgot password error:', error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: 'Failed to send reset email. Please try again later.'
     });
   }
 };
@@ -257,28 +321,56 @@ exports.resetPassword = async (req, res) => {
     const { token } = req.params;
     const { password } = req.body;
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
+    console.log('🔑 Reset password attempt...');
 
-    if (!user) {
+    if (!password) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired token'
+        message: 'Please provide a new password'
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      console.error('❌ Invalid token:', error.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset link. Please request a new one.'
+      });
+    }
+
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      console.log('❌ User not found for token:', decoded.id);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid reset link. Please request a new one.'
       });
     }
 
     user.password = password;
     await user.save();
 
+    console.log('✅ Password reset successfully for:', user.email);
+
     res.json({
       success: true,
-      message: 'Password updated successfully'
+      message: 'Password reset successfully! You can now login with your new password.'
     });
   } catch (error) {
-    console.error('Reset password error:', error);
+    console.error('❌ Reset password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Invalid or expired token'
+      message: 'Failed to reset password. Please try again.'
     });
   }
 };

@@ -93,13 +93,13 @@ exports.createClaim = async (req, res) => {
       .populate('lostItem')
       .populate('foundItem');
 
-    // Create notification for owner
+    // When a claim is created
     await Notification.create({
       user: ownerId,
       type: 'claim',
       title: 'New Claim Request',
-      message: `${req.user.name} has claimed your item: ${lostItem?.title || foundItem?.title}`,
-      link: `/claims/${claim._id}`,
+      message: `${req.user.name} has claimed your item`,
+      link: `/claims/${claim._id}`,  // ✅ Correct link
       data: { claimId: claim._id }
     });
 
@@ -220,6 +220,9 @@ exports.getClaimByItem = async (req, res) => {
 // @route   GET /api/claims/:id
 exports.getClaim = async (req, res) => {
   try {
+    console.log('📝 Fetching claim:', req.params.id);
+    console.log('👤 User ID:', req.userId);
+
     const claim = await Claim.findById(req.params.id)
       .populate('claimant', 'name email avatar phone')
       .populate('owner', 'name email avatar phone')
@@ -233,20 +236,29 @@ exports.getClaim = async (req, res) => {
       });
     }
 
-    // Check authorization
-    if (claim.claimant._id.toString() !== req.userId && 
-        claim.owner._id.toString() !== req.userId) {
+    // ✅ Compare as strings
+    const isClaimant = claim.claimant._id.toString() === req.userId.toString();
+    const isOwner = claim.owner._id.toString() === req.userId.toString();
+
+    console.log('Is Claimant:', isClaimant);
+    console.log('Is Owner:', isOwner);
+
+    if (!isClaimant && !isOwner) {
+      console.log('❌ User not authorized to view this claim');
       return res.status(403).json({
         success: false,
-        message: 'Not authorized to view this claim'
+        message: 'You are not authorized to view this claim'
       });
     }
+
+    console.log('✅ User authorized to view claim');
 
     res.json({
       success: true,
       data: claim
     });
   } catch (error) {
+    console.error('Error fetching claim:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -305,79 +317,95 @@ exports.uploadProof = async (req, res) => {
 exports.updateClaimStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    const claim = await Claim.findById(req.params.id);
+    const claimId = req.params.id;
 
+    console.log('📝 Updating claim status...');
+    console.log('Claim ID:', claimId);
+    console.log('New Status:', status);
+    console.log('User ID:', req.userId);
+
+    // ✅ Validate status
+    const validStatuses = ['pending', 'accepted', 'rejected', 'completed'];
+    if (!status || !validStatuses.includes(status)) {
+      console.log('❌ Invalid status:', status);
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // ✅ Find the claim
+    const claim = await Claim.findById(claimId);
     if (!claim) {
+      console.log('❌ Claim not found:', claimId);
       return res.status(404).json({
         success: false,
         message: 'Claim not found'
       });
     }
 
-    // Check authorization - only owner can update status
-    if (claim.owner.toString() !== req.userId) {
+    console.log('✅ Claim found:', claim._id);
+    console.log('Claim owner:', claim.owner.toString());
+    console.log('Current user:', req.userId.toString());
+
+    // ✅ Compare as strings (fix the comparison)
+    if (claim.owner.toString() !== req.userId.toString()) {
+      console.log('❌ User is not the owner');
       return res.status(403).json({
         success: false,
         message: 'Only the item owner can update claim status'
       });
     }
 
-    // Validate status
-    const validStatuses = ['pending', 'accepted', 'rejected', 'completed'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid status'
-      });
-    }
+    console.log('✅ User is the owner, updating claim status...');
 
+    // ✅ Update claim status
     claim.status = status;
     await claim.save();
 
-    // Update item status based on claim status
+    console.log('✅ Claim status updated to:', status);
+
+    // ✅ Update item status based on claim status
     if (status === 'accepted' || status === 'completed') {
       if (claim.lostItem) {
-        await LostItem.findByIdAndUpdate(claim.lostItem, { 
-          status: 'claimed' 
-        });
+        await LostItem.findByIdAndUpdate(claim.lostItem, { status: 'claimed' });
+        console.log('✅ Lost item marked as claimed');
       }
       if (claim.foundItem) {
-        await FoundItem.findByIdAndUpdate(claim.foundItem, { 
-          status: 'claimed' 
-        });
+        await FoundItem.findByIdAndUpdate(claim.foundItem, { status: 'claimed' });
+        console.log('✅ Found item marked as claimed');
       }
     }
 
-    // If rejected, revert item status
     if (status === 'rejected') {
       if (claim.lostItem) {
-        await LostItem.findByIdAndUpdate(claim.lostItem, { 
-          status: 'open' 
-        });
+        await LostItem.findByIdAndUpdate(claim.lostItem, { status: 'open' });
+        console.log('✅ Lost item marked as open');
       }
       if (claim.foundItem) {
-        await FoundItem.findByIdAndUpdate(claim.foundItem, { 
-          status: 'available' 
-        });
+        await FoundItem.findByIdAndUpdate(claim.foundItem, { status: 'available' });
+        console.log('✅ Found item marked as available');
       }
     }
 
-    // Populate for response
+    // ✅ Get populated claim for response
     const populatedClaim = await Claim.findById(claim._id)
       .populate('claimant', 'name email avatar')
       .populate('owner', 'name email avatar')
       .populate('lostItem')
       .populate('foundItem');
 
-    // Notify claimant
+    // ✅ Notify claimant
     await Notification.create({
       user: claim.claimant,
       type: 'claim',
       title: `Claim ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-      message: `Your claim has been ${status} by the item owner.`,
+      message: `Your claim has been ${status}`,
       link: `/claims/${claim._id}`,
       data: { claimId: claim._id }
     });
+
+    console.log('✅ Notification sent to claimant');
 
     res.json({
       success: true,
@@ -385,9 +413,11 @@ exports.updateClaimStatus = async (req, res) => {
       message: `Claim ${status} successfully`
     });
   } catch (error) {
+    console.error('❌ Error updating claim:', error);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || 'Failed to update claim status'
     });
   }
 };

@@ -11,14 +11,17 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Configure Socket.io with CORS
+// Socket.io setup
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
+    transports: ['websocket', 'polling']
   },
-  transports: ['websocket', 'polling']
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Middleware
@@ -41,6 +44,8 @@ app.use('/api/matches', require('./routes/matches'));
 app.use('/api/claims', require('./routes/claims'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/users', require('./routes/users'));
 
 // ✅ Socket.io connection handling
 io.on('connection', (socket) => {
@@ -58,7 +63,6 @@ io.on('connection', (socket) => {
   socket.on('send-message', async (data) => {
     console.log('📨 Message received:', data);
     
-    // Save message to database
     try {
       const Message = require('./models/Message');
       const message = await Message.create({

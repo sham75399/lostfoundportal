@@ -86,6 +86,8 @@ exports.getMessages = async (req, res) => {
     const { userId } = req.params;
     const { page = 1, limit = 50 } = req.query;
 
+    console.log(`📨 Fetching messages between ${req.userId} and ${userId}`);
+
     const messages = await Message.find({
       $or: [
         { sender: req.userId, receiver: userId },
@@ -151,6 +153,7 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
+    // Check if receiver exists
     const receiver = await User.findById(receiverId);
     if (!receiver) {
       return res.status(404).json({
@@ -159,6 +162,7 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
+    // Create message
     const message = await Message.create({
       sender: req.userId,
       receiver: receiverId,
@@ -166,15 +170,19 @@ exports.sendMessage = async (req, res) => {
       claim: claimId || null
     });
 
+    // Populate sender and receiver details
     const populatedMessage = await Message.findById(message._id)
       .populate('sender', 'name email avatar')
       .populate('receiver', 'name email avatar');
 
+    console.log('✅ Message saved:', message._id);
+
     // Emit via socket.io
     const io = req.app.get('io');
-    io.to(receiverId).emit('receive-message', populatedMessage);
-
-    console.log('✅ Message sent successfully');
+    if (io) {
+      io.to(receiverId).emit('receive-message', populatedMessage);
+      io.to(req.userId).emit('message-sent', populatedMessage);
+    }
 
     res.status(201).json({
       success: true,
@@ -209,9 +217,11 @@ exports.markAsRead = async (req, res) => {
 
     // Emit via socket.io
     const io = req.app.get('io');
-    io.to(userId).emit('messages-read', {
-      receiverId: req.userId
-    });
+    if (io) {
+      io.to(userId).emit('messages-read', {
+        receiverId: req.userId
+      });
+    }
 
     res.json({
       success: true,

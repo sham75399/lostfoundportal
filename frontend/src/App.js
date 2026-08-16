@@ -20,6 +20,10 @@ import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
 import EditItem from './pages/EditItem';
 import EditFoundItem from './pages/EditFoundItem';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Claims from './pages/Claims';
+import ClaimDetails from './pages/ClaimDetails';
 
 const theme = createTheme({
   palette: {
@@ -56,6 +60,10 @@ function App() {
                 <Route path="*" element={<Navigate to="/" />} />
                 <Route path="/edit-item/:id" element={<PrivateRoute><EditItem /></PrivateRoute>} />
                 <Route path="/edit-found/:id" element={<PrivateRoute><EditFoundItem /></PrivateRoute>} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password/:token" element={<ResetPassword />} />
+                <Route path="/claims" element={<PrivateRoute><Claims /></PrivateRoute>} />
+                <Route path="/claims/:id" element={<PrivateRoute><ClaimDetails /></PrivateRoute>} />
               </Routes>
             </main>
             <Footer />

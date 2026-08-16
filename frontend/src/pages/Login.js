@@ -71,7 +71,6 @@ const Login = () => {
           Sign in to your account to continue
         </Typography>
         <br></br>
-
         {error && (
           <Alert severity="error" className="mb-4">
             {error}
@@ -126,11 +125,11 @@ const Login = () => {
           />
         </Box>
 
-          <div className="text-right mb-4">
-            <Link to="/forgot-password" className="text-primary text-sm hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+        <div className="text-right mb-4">
+          <Link to="/forgot-password" className="text-primary text-sm hover:underline">
+            Forgot password?
+          </Link>
+        </div>
 
           <Button
             type="submit"

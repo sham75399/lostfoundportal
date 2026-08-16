@@ -34,7 +34,11 @@ import {
   Chat,
   QrCode,
   Edit,
-  CheckCircle
+  CheckCircle,
+  ArrowBack,
+  ArrowForward,
+  Close,
+  ZoomIn
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
@@ -55,6 +59,8 @@ const ItemDetails = () => {
   const [claimLoading, setClaimLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
     fetchItemDetails();
@@ -195,20 +201,80 @@ const ItemDetails = () => {
         <Grid item xs={12} md={7}>
           <Paper className="p-2">
             {item.images && item.images.length > 0 ? (
-              <ImageList cols={item.images.length > 1 ? 2 : 1} rowHeight={300}>
-                {item.images.map((image, index) => (
-                  <ImageListItem key={index}>
-                    <img
-                      src={image}
-                      alt={`${item.title} - ${index + 1}`}
-                      className="w-full h-64 object-cover rounded"
-                      onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/400x300/ff0000/ffffff?text=Image+Not+Found';
-                      }}
-                    />
-                  </ImageListItem>
-                ))}
-              </ImageList>
+              <Box className="relative">
+                <Box
+                  className="relative bg-gray-100 rounded-lg overflow-hidden cursor-pointer"
+                  onClick={() => setLightboxOpen(true)}
+                  sx={{ aspectRatio: '4/3' }}
+                >
+                  <img
+                    src={item.images[currentImageIndex]}
+                    alt={`${item.title} - ${currentImageIndex + 1}`}
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      e.target.src = 'https://via.placeholder.com/400x300/ff0000/ffffff?text=Image+Not+Found';
+                    }}
+                  />
+
+                  <Box className="absolute bottom-2 right-2 bg-black/50 text-white p-1 rounded-full">
+                    <ZoomIn fontSize="small" />
+                  </Box>
+                </Box>
+
+                {item.images.length > 1 && (
+                  <Box className="flex justify-between items-center mt-3">
+                    <IconButton
+                      onClick={() => setCurrentImageIndex(prev =>
+                        prev === 0 ? item.images.length - 1 : prev - 1
+                      )}
+                      className="bg-gray-200 hover:bg-gray-300"
+                      size="small"
+                    >
+                      <ArrowBack />
+                    </IconButton>
+
+                    <Box className="flex gap-2 overflow-x-auto px-2 flex-1 justify-center">
+                      {item.images.map((img, index) => (
+                        <Box
+                          key={index}
+                          onClick={() => setCurrentImageIndex(index)}
+                          className={`cursor-pointer rounded border-2 ${
+                            index === currentImageIndex ? 'border-primary' : 'border-transparent'
+                          }`}
+                          sx={{
+                            width: 60,
+                            height: 60,
+                            flexShrink: 0,
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <img
+                            src={`${img}?w=60&h=60&fit=crop`}
+                            alt={`Thumbnail ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </Box>
+                      ))}
+                    </Box>
+
+                    <IconButton
+                      onClick={() => setCurrentImageIndex(prev =>
+                        prev === item.images.length - 1 ? 0 : prev + 1
+                      )}
+                      className="bg-gray-200 hover:bg-gray-300"
+                      size="small"
+                    >
+                      <ArrowForward />
+                    </IconButton>
+                  </Box>
+                )}
+
+                {item.images.length > 1 && (
+                  <Typography variant="caption" className="text-gray-500 text-center block mt-1">
+                    {currentImageIndex + 1} / {item.images.length}
+                  </Typography>
+                )}
+              </Box>
             ) : (
               <Box className="h-64 bg-gray-200 flex items-center justify-center rounded">
                 <Typography variant="body1" color="textSecondary">
@@ -217,6 +283,60 @@ const ItemDetails = () => {
               </Box>
             )}
           </Paper>
+
+          <Dialog
+            open={lightboxOpen}
+            onClose={() => setLightboxOpen(false)}
+            maxWidth="lg"
+            fullWidth
+            PaperProps={{
+              sx: {
+                bgcolor: 'rgba(0,0,0,0.9)',
+                maxHeight: '100vh',
+                height: '100vh',
+                maxWidth: '100vw',
+                width: '100vw',
+                margin: 0,
+                borderRadius: 0
+              }
+            }}
+          >
+            <Box className="relative h-full flex items-center justify-center">
+              <IconButton
+                onClick={() => setLightboxOpen(false)}
+                className="absolute top-4 right-4 text-white bg-black/50 hover:bg-black/70 z-10"
+              >
+                <Close />
+              </IconButton>
+
+              <img
+                src={item.images[currentImageIndex]}
+                alt={`${item.title} - Full view`}
+                className="max-w-full max-h-full object-contain"
+              />
+
+              {item.images.length > 1 && (
+                <>
+                  <IconButton
+                    onClick={() => setCurrentImageIndex(prev =>
+                      prev === 0 ? item.images.length - 1 : prev - 1
+                    )}
+                    className="absolute left-4 text-white bg-black/50 hover:bg-black/70"
+                  >
+                    <ArrowBack />
+                  </IconButton>
+                  <IconButton
+                    onClick={() => setCurrentImageIndex(prev =>
+                      prev === item.images.length - 1 ? 0 : prev + 1
+                    )}
+                    className="absolute right-4 text-white bg-black/50 hover:bg-black/70"
+                  >
+                    <ArrowForward />
+                  </IconButton>
+                </>
+              )}
+            </Box>
+          </Dialog>
 
           {item.qrCode && (
             <Box className="mt-4">
@@ -380,7 +500,6 @@ const ItemDetails = () => {
                 </Button>
               )}
 
-              {/* ✅ Message Button - Shows for logged-in users who are NOT the owner */}
               {isAuthenticated && !isOwner && (
                 <Button
                   fullWidth
@@ -410,13 +529,6 @@ const ItemDetails = () => {
             {!isAvailable && (
               <Alert severity="info" className="mt-4">
                 This item has already been claimed.
-              </Alert>
-            )}
-
-            {/* ✅ Owner message */}
-            {isOwner && (
-              <Alert severity="info" className="mt-4">
-                You are the owner of this item. You cannot claim your own item.
               </Alert>
             )}
           </Paper>

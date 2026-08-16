@@ -13,7 +13,13 @@ import {
   Box,
   Container,
   Badge,
-  Divider
+  Divider,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  ListItemIcon,
+  CircularProgress
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -25,8 +31,13 @@ import {
   AdminPanelSettings,
   AddCircle,
   Notifications,
-  Chat
+  Chat,
+  CheckCircle,
+  Cancel,
+  Message,
+  AdminPanelSettings as AdminIcon
 } from '@mui/icons-material';
+import api from '../utils/api';
 
 const Navbar = () => {
   const { user, isAuthenticated, isAdmin, logout } = useAuth();
@@ -35,11 +46,14 @@ const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifAnchorEl, setNotifAnchorEl] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
 
   // ✅ Fetch unread count
   useEffect(() => {
     if (isAuthenticated) {
       fetchUnreadCount();
+      fetchNotifications();
     }
   }, [isAuthenticated]);
 
@@ -49,6 +63,47 @@ const Navbar = () => {
       setUnreadCount(response.data.data?.unread || 0);
     } catch (error) {
       console.error('Error fetching unread count:', error);
+    }
+  };
+
+  // ✅ Fetch notifications
+  const fetchNotifications = async () => {
+    try {
+      setLoadingNotifs(true);
+      const response = await api.get('/notifications');
+      setNotifications(response.data.data || []);
+      const unread = response.data.data?.filter(n => !n.isRead).length || 0;
+      setUnreadCount(unread);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    } finally {
+      setLoadingNotifs(false);
+    }
+  };
+
+  // ✅ Mark notification as read
+  const markAsRead = async (id) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications(prev => 
+        prev.map(n => n._id === id ? { ...n, isRead: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // ✅ Mark all as read
+  const markAllAsRead = async () => {
+    try {
+      await api.put('/notifications/read-all');
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, isRead: true }))
+      );
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all as read:', error);
     }
   };
 
@@ -62,6 +117,8 @@ const Navbar = () => {
 
   const handleNotifOpen = (event) => {
     setNotifAnchorEl(event.currentTarget);
+    // Refresh notifications when opening
+    fetchNotifications();
   };
 
   const handleNotifClose = () => {
@@ -72,6 +129,33 @@ const Navbar = () => {
     logout();
     handleClose();
     navigate('/');
+  };
+
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'claim':
+        return <CheckCircle color="primary" />;
+      case 'match':
+        return <Chat color="success" />;
+      case 'message':
+        return <Message color="info" />;
+      case 'admin':
+        return <AdminIcon color="warning" />;
+      default:
+        return <Notifications />;
+    }
+  };
+
+  const getTimeAgo = (date) => {
+    const diff = new Date() - new Date(date);
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
   };
 
   const navItems = [
@@ -127,12 +211,13 @@ const Navbar = () => {
                   Report
                 </Button>
                 
+                {/* ✅ Bell Icon with dynamic badge */}
                 <IconButton color="inherit" onClick={handleNotifOpen}>
-                  <Badge badgeContent={3} color="error">
+                  <Badge badgeContent={unreadCount} color="error">
                     <Notifications />
                   </Badge>
                 </IconButton>
-
+                
                 <IconButton color="inherit" component={Link} to="/chat">
                   <Badge badgeContent={unreadCount} color="error">
                     <Chat />
@@ -180,42 +265,90 @@ const Navbar = () => {
                   </MenuItem>
                 </Menu>
 
+                {/* ✅ Notification Dropdown */}
                 <Menu
                   anchorEl={notifAnchorEl}
                   open={Boolean(notifAnchorEl)}
                   onClose={handleNotifClose}
                   PaperProps={{
-                    sx: { mt: 1, minWidth: 300, maxHeight: 400 }
+                    sx: { 
+                      mt: 1, 
+                      width: 380, 
+                      maxHeight: 500,
+                      overflow: 'auto'
+                    }
                   }}
                 >
-                  <MenuItem>
-                    <Typography variant="subtitle2" className="font-bold">
+                  <Box className="flex justify-between items-center p-3 border-b">
+                    <Typography variant="h6" className="font-bold">
                       Notifications
                     </Typography>
-                  </MenuItem>
-                  <Divider />
-                  <MenuItem onClick={handleNotifClose}>
-                    <div>
-                      <Typography variant="body2">New claim request</Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        2 hours ago
+                    {unreadCount > 0 && (
+                      <Button size="small" onClick={markAllAsRead}>
+                        Mark all as read
+                      </Button>
+                    )}
+                  </Box>
+
+                  {loadingNotifs ? (
+                    <Box className="p-8 text-center">
+                      <CircularProgress size={30} />
+                    </Box>
+                  ) : notifications.length === 0 ? (
+                    <Box className="p-8 text-center">
+                      <Typography variant="body2" color="textSecondary">
+                        No notifications yet
                       </Typography>
-                    </div>
-                  </MenuItem>
-                  <MenuItem onClick={handleNotifClose}>
-                    <div>
-                      <Typography variant="body2">Match found for your item</Typography>
-                      <Typography variant="caption" color="textSecondary">
-                        5 hours ago
-                      </Typography>
-                    </div>
-                  </MenuItem>
-                  <Divider />
-                  <MenuItem onClick={handleNotifClose} className="justify-center">
-                    <Typography variant="body2" color="primary">
-                      View all notifications
-                    </Typography>
-                  </MenuItem>
+                    </Box>
+                  ) : (
+                    <>
+                      {notifications.slice(0, 10).map((notification) => (
+                        <MenuItem
+                          key={notification._id}
+                          onClick={() => {
+                            markAsRead(notification._id);
+                            if (notification.link) {
+                              console.log('🔗 Navigating to:', notification.link);
+                              navigate(notification.link);
+                            }
+                            handleNotifClose();
+                          }}
+                          className={`${!notification.isRead ? 'bg-blue-50' : ''}`}
+                        >
+                          <ListItemIcon>
+                            {getNotificationIcon(notification.type)}
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={
+                              <Typography variant="body2" className="font-medium">
+                                {notification.title}
+                              </Typography>
+                            }
+                            secondary={
+                              <>
+                                <Typography variant="caption" display="block" color="textSecondary">
+                                  {notification.message}
+                                </Typography>
+                                <Typography variant="caption" color="textSecondary">
+                                  {getTimeAgo(notification.createdAt)}
+                                </Typography>
+                              </>
+                            }
+                          />
+                        </MenuItem>
+                      ))}
+                      {notifications.length > 10 && (
+                        <Divider />
+                      )}
+                      {notifications.length > 10 && (
+                        <Box className="p-2 text-center">
+                          <Button size="small" fullWidth>
+                            View All Notifications
+                          </Button>
+                        </Box>
+                      )}
+                    </>
+                  )}
                 </Menu>
               </>
             )}
@@ -287,6 +420,9 @@ const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Messages
+                  {unreadCount > 0 && (
+                    <Badge badgeContent={unreadCount} color="error" className="ml-2" />
+                  )}
                 </Button>
                 <Button
                   color="inherit"

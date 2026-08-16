@@ -16,7 +16,8 @@ import {
   CircularProgress,
   Button,
   Badge,
-  InputAdornment
+  InputAdornment,
+  Alert
 } from '@mui/material';
 import {
   Send,
@@ -43,11 +44,21 @@ const Chat = () => {
   const [socket, setSocket] = useState(null);
   const [typing, setTyping] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
+  // ✅ Check if trying to message self
   useEffect(() => {
-    // Initialize socket connection
+    if (userId && user && userId === user.id) {
+      setError('You cannot message yourself');
+      setSelectedUser(null);
+    } else {
+      setError('');
+    }
+  }, [userId, user]);
+
+  useEffect(() => {
     const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', {
       transports: ['websocket', 'polling'],
       withCredentials: true
@@ -67,11 +78,12 @@ const Chat = () => {
     if (socket) {
       socket.on('receive-message', (message) => {
         console.log('📨 Received message:', message);
-        setMessages(prev => [...prev, message]);
-        scrollToBottom();
-        
-        // Update conversation list
-        fetchConversations();
+        // ✅ Don't add if sender is current user (prevent duplicates)
+        if (message.sender?._id !== user?.id) {
+          setMessages(prev => [...prev, message]);
+          scrollToBottom();
+          fetchConversations();
+        }
       });
 
       socket.on('user-typing', (data) => {
@@ -95,10 +107,13 @@ const Chat = () => {
   }, [socket, userId]);
 
   useEffect(() => {
-    if (userId) {
+    if (userId && userId !== user?.id) {
       fetchConversations();
       fetchMessages(userId);
       fetchUserDetails(userId);
+    } else if (userId === user?.id) {
+      setError('You cannot message yourself');
+      setLoading(false);
     } else {
       fetchConversations();
     }
@@ -115,7 +130,9 @@ const Chat = () => {
   const fetchConversations = async () => {
     try {
       const response = await api.get('/chat/conversations');
-      setConversations(response.data.data || []);
+      // ✅ Filter out conversations with yourself
+      const filtered = response.data.data?.filter(conv => conv.user?._id !== user?.id) || [];
+      setConversations(filtered);
     } catch (error) {
       console.error('Error fetching conversations:', error);
     } finally {
@@ -138,24 +155,44 @@ const Chat = () => {
       setSelectedUser(response.data.data);
     } catch (error) {
       console.error('Error fetching user details:', error);
+      if (conversations.length > 0) {
+        const conv = conversations.find(c => c.user?._id === otherUserId);
+        if (conv) {
+          setSelectedUser(conv.user);
+        }
+      }
     }
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !userId) return;
+    if (!newMessage.trim() || !userId) {
+      console.log('❌ Cannot send empty message or no user selected');
+      return;
+    }
+
+    // ✅ Prevent messaging yourself
+    if (userId === user?.id) {
+      setError('You cannot send a message to yourself');
+      return;
+    }
+
+    console.log('📤 Sending message to:', userId);
+    console.log('📝 Content:', newMessage.trim());
 
     setSending(true);
+    setError('');
     try {
       const response = await api.post('/chat', {
         receiverId: userId,
         content: newMessage.trim()
       });
 
+      console.log('✅ Message sent:', response.data);
+
       const message = response.data.data;
       setMessages(prev => [...prev, message]);
       setNewMessage('');
 
-      // Emit via socket
       if (socket) {
         socket.emit('send-message', {
           senderId: user.id,
@@ -167,7 +204,9 @@ const Chat = () => {
       scrollToBottom();
       fetchConversations();
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('❌ Error sending message:', error);
+      console.error('Response:', error.response?.data);
+      setError(error.response?.data?.message || 'Failed to send message');
     } finally {
       setSending(false);
     }
@@ -183,7 +222,7 @@ const Chat = () => {
   const handleTyping = (e) => {
     setNewMessage(e.target.value);
     
-    if (socket && userId) {
+    if (socket && userId && userId !== user?.id) {
       if (!typing) {
         setTyping(true);
         socket.emit('typing', {
@@ -206,6 +245,11 @@ const Chat = () => {
   };
 
   const handleSelectConversation = (otherUser) => {
+    // ✅ Prevent selecting yourself
+    if (otherUser._id === user?.id) {
+      setError('You cannot chat with yourself');
+      return;
+    }
     navigate(`/chat/${otherUser._id}`);
   };
 
@@ -219,8 +263,37 @@ const Chat = () => {
     );
   }
 
+  // ✅ Show error if trying to message self
+  if (userId === user?.id) {
+    return (
+      <Container maxWidth="lg" className="py-8">
+        <Paper className="p-8 text-center">
+          <Typography variant="h5" className="text-red-600 mb-4">
+            ⚠️ Cannot Message Yourself
+          </Typography>
+          <Typography variant="body1" color="textSecondary">
+            You cannot send a message to yourself. Please select another user to chat with.
+          </Typography>
+          <Button
+            variant="contained"
+            className="mt-4"
+            onClick={() => navigate('/chat')}
+          >
+            Go Back
+          </Button>
+        </Paper>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="lg" className="py-8">
+      {error && (
+        <Alert severity="error" className="mb-4">
+          {error}
+        </Alert>
+      )}
+
       <Paper className="h-[600px] flex">
         {/* Conversation List */}
         <div className="w-80 border-r flex flex-col">
@@ -255,55 +328,61 @@ const Chat = () => {
                 </Typography>
               </Box>
             ) : (
-              conversations.map((conv) => (
-                <ListItem
-                  key={conv.user?._id}
-                  button
-                  selected={conv.user?._id === userId}
-                  onClick={() => handleSelectConversation(conv.user)}
-                  className="hover:bg-gray-50"
-                >
-                  <ListItemAvatar>
-                    <Badge
-                      color="success"
-                      variant="dot"
-                      invisible={!conv.user?.online}
-                      anchorOrigin={{
-                        vertical: 'bottom',
-                        horizontal: 'right',
-                      }}
-                    >
-                      <Avatar src={conv.user?.avatar}>
-                        {conv.user?.name?.charAt(0)}
-                      </Avatar>
-                    </Badge>
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={conv.user?.name}
-                    secondary={
-                      <Typography variant="caption" color="textSecondary" className="truncate block">
-                        {conv.lastMessage?.content || 'No messages yet'}
+              conversations.map((conv) => {
+                // ✅ Skip if conversation is with yourself
+                if (conv.user?._id === user?.id) {
+                  return null;
+                }
+                return (
+                  <ListItem
+                    key={conv.user?._id}
+                    button
+                    selected={conv.user?._id === userId}
+                    onClick={() => handleSelectConversation(conv.user)}
+                    className="hover:bg-gray-50"
+                  >
+                    <ListItemAvatar>
+                      <Badge
+                        color="success"
+                        variant="dot"
+                        invisible={!conv.user?.online}
+                        anchorOrigin={{
+                          vertical: 'bottom',
+                          horizontal: 'right',
+                        }}
+                      >
+                        <Avatar src={conv.user?.avatar}>
+                          {conv.user?.name?.charAt(0)}
+                        </Avatar>
+                      </Badge>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={conv.user?.name}
+                      secondary={
+                        <Typography variant="caption" color="textSecondary" className="truncate block">
+                          {conv.lastMessage?.content || 'No messages yet'}
+                        </Typography>
+                      }
+                    />
+                    <Box className="flex flex-col items-end">
+                      <Typography variant="caption" color="textSecondary">
+                        {conv.lastMessage?.createdAt ? timeAgo(conv.lastMessage.createdAt) : ''}
                       </Typography>
-                    }
-                  />
-                  <Box className="flex flex-col items-end">
-                    <Typography variant="caption" color="textSecondary">
-                      {conv.lastMessage?.createdAt ? timeAgo(conv.lastMessage.createdAt) : ''}
-                    </Typography>
-                    {conv.unread > 0 && (
-                      <Box className="bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs mt-1">
-                        {conv.unread}
-                      </Box>
-                    )}
-                  </Box>
-                </ListItem>
-              ))
+                      {conv.unread > 0 && (
+                        <Box className="bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs mt-1">
+                          {conv.unread}
+                        </Box>
+                      )}
+                    </Box>
+                  </ListItem>
+                );
+              })
             )}
           </List>
         </div>
 
         {/* Chat Area */}
-        {userId && selectedUser ? (
+        {userId && selectedUser && userId !== user?.id ? (
           <div className="flex-1 flex flex-col">
             {/* Chat Header */}
             <Box className="p-4 border-b flex items-center gap-3 bg-gray-50">
@@ -402,11 +481,12 @@ const Chat = () => {
                   maxRows={4}
                   size="small"
                   variant="outlined"
+                  disabled={userId === user?.id}
                 />
                 <IconButton
                   color="primary"
                   onClick={handleSendMessage}
-                  disabled={!newMessage.trim() || sending}
+                  disabled={!newMessage.trim() || sending || userId === user?.id}
                   className="bg-primary text-white hover:bg-primary-dark"
                 >
                   {sending ? <CircularProgress size={24} color="inherit" /> : <Send />}

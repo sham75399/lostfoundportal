@@ -42,7 +42,7 @@ const ItemCard = ({ item, type, onFavorite, isFavorited }) => {
         <CardMedia
           component="img"
           height="200"
-          image={images[0]}
+          image={images[0] ? `${images[0]}?w=300&h=200&fit=crop` : ''}
           alt={title}
           className="h-48 object-cover"
         />

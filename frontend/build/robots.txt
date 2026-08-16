@@ -1,0 +1,15 @@
+# Robots.txt for Lost and Found Portal
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /profile/
+Disallow: /dashboard/
+Disallow: /chat/
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://lostfoundportal.com/sitemap.xml
+
+# Crawl delay
+Crawl-delay: 10

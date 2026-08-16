@@ -547,6 +547,9 @@ const ItemDetails = () => {
             Submit a claim request for this item. Provide any additional information
             or proof of ownership that can help verify your claim.
           </Typography>
+              
+          <br></br>
+              
           <TextField
             fullWidth
             label="Additional Message"
